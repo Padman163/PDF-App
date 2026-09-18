@@ -1,0 +1,30 @@
+[
+  {
+    "erkannt": "Bb Flugelhorm 1",
+    "ziel": "Flügelhorn 1"
+  },
+  {
+    "erkannt": "Bb Bass Clarinet",
+    "ziel": "Bassklarinette"
+  },
+  {
+    "erkannt": "Bb Clarnet 1",
+    "ziel": "Klarinette 1"
+  },
+  {
+    "erkannt": "Eb Alto Saxophone 1",
+    "ziel": "Alt Sax 1"
+  },
+  {
+    "erkannt": "Eb Alto Saxophone 2",
+    "ziel": "Alt Sax 2"
+  },
+  {
+    "erkannt": "Eb Clarinet",
+    "ziel": "Klarinette in Eb"
+  },
+  {
+    "erkannt": "Bb Tenor Saxophone",
+    "ziel": "Tenor Sax"
+  }
+]
