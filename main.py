@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 import shutil
 import fitz
 from pathlib import Path
@@ -10,6 +10,7 @@ from pdf_logic import (
     verarbeite_pdf_ocr,
     verarbeite_einzelne_seite,
     speichere_finale_pdfs,
+    speichere_einzelnen_satz,  # Neu importieren
 )
 from pydantic import BaseModel
 from typing import List, Optional
@@ -254,3 +255,31 @@ async def finalize_pdfs(pages: List[PageData]):
         temp_file.unlink(missing_ok=True)
 
     return {"status": "success", "message": "Alle Dateien erfolgreich gespeichert!"}
+
+class SingleSetExportRequest(BaseModel):
+    instrument: str
+    pages: List[PageData]
+
+# Einzelnen Notensatz manuell exportieren
+@app.post("/export-single-set/")
+def export_single_set(request: SingleSetExportRequest):
+    seiten_daten = [page.model_dump() for page in request.pages]
+    ziel_pfad = speichere_einzelnen_satz(request.instrument, seiten_daten)
+    return {
+        "status": "success",
+        "instrument": request.instrument,
+        "filename": ziel_pfad.name,
+        "download_url": f"http://127.0.0.1:8000/download-finished/{ziel_pfad.name}"
+    }
+
+# Download-Endpunkt für fertig geschnittene Sätze
+@app.get("/download-finished/{filename}")
+def download_finished_file(filename: str):
+    pfad = Path("Dateien") / "Fertig" / Path(filename).name
+    if not pfad.exists():
+        return Response(status_code=404)
+    return FileResponse(
+        pfad,
+        filename=pfad.name,
+        media_type="application/pdf"
+    )

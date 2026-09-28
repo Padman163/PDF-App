@@ -371,3 +371,36 @@ def _seiten_sortierung(eintrag):
     if match:
         return 0, int(match.group()), eintrag["reihenfolge"]
     return 0, 1, eintrag["reihenfolge"]
+
+def speichere_einzelnen_satz(instrument_name: str, seiten_liste: list):
+    """
+    Erstellt für ein einzelnes Instrument (Notensatz) die fertige PDF
+    und speichert sie im Ordner 'Dateien/Fertig'.
+    """
+    ziel_ordner = Path("Dateien") / "Fertig"
+    ziel_ordner.mkdir(parents=True, exist_ok=True)
+
+    clean_name = re.sub(r'[\\/*?:"<>|]', '_', instrument_name).strip() or "Unbenannt"
+    ziel_pfad = ziel_ordner / f"{clean_name}.pdf"
+
+    # Nach Seitenzahl sortieren
+    def _sort_key(s):
+        seite_str = str(s.get("seite", ""))
+        m = re.search(r"\d+", seite_str)
+        return (int(m.group()) if m else 1, s.get("id", 0))
+
+    sortierte_seiten = sorted(seiten_liste, key=_sort_key)
+
+    with fitz.open() as out_doc:
+        for seite in sortierte_seiten:
+            dateiname = seite["dateiname"] or seite["pdf_url"].split("/pdfs/")[1].split("#")[0]
+            quell_pfad = Path("Dateien") / dateiname
+            if quell_pfad.exists():
+                with fitz.open(quell_pfad) as doc:
+                    seiten_idx = int(seite["id"]) - 1
+                    if 0 <= seiten_idx < len(doc):
+                        out_doc.insert_pdf(doc, from_page=seiten_idx, to_page=seiten_idx)
+
+        out_doc.save(ziel_pfad)
+
+    return ziel_pfad
