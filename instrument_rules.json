@@ -26,5 +26,9 @@
   {
     "erkannt": "Bb Tenor Saxophone",
     "ziel": "Tenor Sax"
+  },
+  {
+    "erkannt": "Bb Tenorhorn",
+    "ziel": "Tenorhorn in Bb Violin"
   }
 ]
