@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 
 const files = ref([])
 const rawDocuments = ref([])
@@ -367,6 +367,11 @@ const applyReferenceProfile = async (targetProfile) => {
     currentPage.value.instrument = data.instrument
     currentPage.value.seite = data.seite
     currentPage.value.profil = targetProfile
+
+    // Fokus direkt wieder ins Eingabefeld legen für schnelles Weiter-Enter
+    await nextTick()
+    instrumentInput.value?.focus()
+    instrumentInput.value?.select()
   } catch (error) {
     alert(`Fehler beim Wechseln der Referenz: ${error.message}`)
   } finally {
@@ -410,6 +415,31 @@ const nextPage = () => {
     finalize()
   }
 }
+
+// Tastatur-Steuerung für das NumPad in der Einzelprüfung
+const handleKeyDown = (event) => {
+  // Nur im Review-Modus aktiv und wenn gerade kein OCR-Request läuft
+  if (mode.value !== 'review' || isBusy.value) return
+
+  if (event.code === 'Numpad1') {
+    event.preventDefault()
+    applyReferenceProfile('first')
+  } else if (event.code === 'Numpad2') {
+    event.preventDefault()
+    applyReferenceProfile('second')
+  } else if (event.code === 'Numpad3') {
+    event.preventDefault()
+    applyReferenceProfile('third')
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 </script>
 
 <template>
@@ -754,19 +784,22 @@ const nextPage = () => {
           <p class="text-xs font-semibold text-gray-500 mb-2">Mit anderer Referenzseite neu erkennen:</p>
           <div class="grid grid-cols-3 gap-2">
             <button @click="applyReferenceProfile('first')" :disabled="isBusy"
-              :class="currentPage?.profil === 'first' ? 'bg-blue-600 text-white' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
-              class="py-2 rounded-lg text-xs font-semibold disabled:opacity-50">
-              1. Referenz
+              :class="currentPage?.profil === 'first' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
+              class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5 transition-all">
+              <span>1. Referenz</span>
+              <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1.5 py-0.5 rounded">Num 1</span>
             </button>
             <button @click="applyReferenceProfile('second')" :disabled="isBusy"
-              :class="currentPage?.profil === 'second' ? 'bg-blue-600 text-white' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
-              class="py-2 rounded-lg text-xs font-semibold disabled:opacity-50">
-              2. Referenz
+              :class="currentPage?.profil === 'second' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
+              class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5 transition-all">
+              <span>2. Referenz</span>
+              <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1.5 py-0.5 rounded">Num 2</span>
             </button>
             <button @click="applyReferenceProfile('third')" :disabled="isBusy"
-              :class="currentPage?.profil === 'third' ? 'bg-blue-600 text-white' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
-              class="py-2 rounded-lg text-xs font-semibold disabled:opacity-50">
-              3. Referenz
+              :class="currentPage?.profil === 'third' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
+              class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5 transition-all">
+              <span>3. Referenz</span>
+              <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1.5 py-0.5 rounded">Num 3</span>
             </button>
           </div>
         </div>
