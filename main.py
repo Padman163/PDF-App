@@ -187,9 +187,9 @@ async def split_documents(items: List[SplitDocumentRequest]):
     return {"status": "success", "dokumente": dokumente}
 
 
-# Vorschaubild für Schritt 2 (bereits geschnittene A4-Seiten als PNG)
+# Vorschaubild für Schritt 2: 'def' statt 'async def' verhindert das Blockieren
 @app.get("/preview/{filename}/{page_number}")
-async def preview_page(filename: str, page_number: int):
+def preview_page(filename: str, page_number: int):
     pdf_path = Path("Dateien") / Path(filename).name
     if page_number < 1 or not pdf_path.exists():
         return Response(status_code=404)

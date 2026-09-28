@@ -188,6 +188,10 @@ const finishSplitDrag = () => {
 }
 
 // Schritt 2: Schnitt bestätigen und A4-Seiten erzeugen
+// Neuer stabiler Versionsstempel für den Cache:
+const splitVersion = ref(Date.now())
+
+// In confirmSplitAndContinue NACH dem erfolgreichen Schnitt aktualisieren:
 const confirmSplitAndContinue = async () => {
   if (!rawDocuments.value.length) return
   isBusy.value = true
@@ -209,6 +213,9 @@ const confirmSplitAndContinue = async () => {
     documents.value = data.dokumente
     selections.value = createEmptySelections()
 
+    // Cache-Version genau EINMAL neu setzen:
+    splitVersion.value = Date.now()
+
     const docWith2Pages = documents.value.findIndex((d) => d.page_count >= 2)
     const docWith3Pages = documents.value.findIndex((d) => d.page_count >= 3)
 
@@ -225,8 +232,13 @@ const confirmSplitAndContinue = async () => {
   }
 }
 
-const previewUrl = (document, page) =>
-  `http://127.0.0.1:8000/preview/${encodeURIComponent(document.filename)}/${page}?t=${Date.now()}`
+// previewUrl verwendet jetzt die feste splitVersion statt Date.now():
+const previewUrl = (document, page) => {
+  if (!document || !document.filename) return ''
+  return `http://127.0.0.1:8000/preview/${encodeURIComponent(document.filename)}/${page}?v=${splitVersion.value}`
+}
+
+
 
 const referenceChoice = (sample) => {
   const val = referencePages.value[sample]
@@ -254,8 +266,10 @@ const regionStyle = (region) =>
       }
     : {}
 
+// Absicherung gegen NaN beim Ziehen:
 const pointInPreview = (event) => {
   const bounds = event.currentTarget.getBoundingClientRect()
+  if (!bounds.width || !bounds.height) return { x: 0, y: 0 }
   return {
     x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
     y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height))
