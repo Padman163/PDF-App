@@ -7,8 +7,7 @@ import re
 INSTRUMENTE = {
     "double bass": "Kontrabass",
     "contrabass": "Kontrabass",
-    # --- NEU: Zusammengesetzte Instrumente verhindern das Zerstückeln ---
-    "bass clarinet": "Bassklarinette", 
+    "bass clarinet": "Bassklarinette",
     "alto clarinet": "Altklarinette",
     "alto saxophone": "Altsaxophon",
     "tenor saxophone": "Tenorsaxophon",
@@ -18,7 +17,6 @@ INSTRUMENTE = {
     "euphonium": "Euphonium",
     "cornet": "Kornett",
     "tuba": "Tuba",
-    # -------------------------------------------------------------------
     "bassoon": "Fagott",
     "saxophone": "Saxophon",
     "percussion": "Schlagwerk",
@@ -55,25 +53,98 @@ INSTRUMENTE = {
 # WICHTIG: Pfad zu Tesseract anpassen, falls abweichend!
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-def split_a3_to_a4(input_path, output_path):
-    doc = fitz.open(input_path)
-    out_doc = fitz.open()
 
-    for page in doc:
-        rect = page.rect
-        if rect.width > rect.height:
-            mid = rect.width / 2
-            out_doc.insert_pdf(doc, from_page=page.number, to_page=page.number)
-            out_doc[-1].set_cropbox(fitz.Rect(rect.x0, rect.y0, mid, rect.y1))
+def split_a3_to_a4(input_path, output_path, rotation=0, split_ratio=0.5, enabled=True, target_format="a4"):
+    """
+    1. Berechnet die Drehung im Uhrzeigersinn und überträgt sie exakt (ohne 180°-Invertierung)
+       in ein normalisiertes Zwischen-PDF.
+    2. Schneidet das normalisierte Dokument vertikal an der Schieberegler-Position.
+    3. Passt die Hälften aufrecht und unverzerrt in DIN A4 ein.
+    """
+    split_ratio = max(0.1, min(0.9, float(split_ratio)))
+    rotation = int(rotation) % 360
 
-            out_doc.insert_pdf(doc, from_page=page.number, to_page=page.number)
-            out_doc[-1].set_cropbox(fitz.Rect(mid, rect.y0, rect.x1, rect.y1))
-        else:
-            out_doc.insert_pdf(doc, from_page=page.number, to_page=page.number)
+    # DIN A4 Standardmaße in PDF-Punkten (210 x 297 mm = 595.28 x 841.89 pt)
+    A4_W = 595.28
+    A4_H = 841.89
 
-    out_doc.save(output_path)
-    out_doc.close()
-    doc.close()
+    # --- SCHRITT 1: Drehung sicher einbrennen ---
+    with fitz.open(input_path) as src_doc:
+        temp_doc = fitz.open()
+
+        for page in src_doc:
+            # Gesamtdrehung im Uhrzeigersinn (wie in der Browser-Vorschau)
+            total_rot = (page.rotation + rotation) % 360
+
+            # Quellseite neutralisieren
+            page.set_rotation(0)
+            raw_w = page.rect.width
+            raw_h = page.rect.height
+
+            # Bei 90° / 270° Drehung tauschen Breite und Höhe
+            if total_rot in (90, 270):
+                vis_w, vis_h = raw_h, raw_w
+            else:
+                vis_w, vis_h = raw_w, raw_h
+
+            temp_page = temp_doc.new_page(width=vis_w, height=vis_h)
+
+            # KORREKTUR: PyMuPDF show_pdf_page dreht gegen den Uhrzeigersinn.
+            # (360 - total_rot) % 360 kehrt das um, damit es exakt wie in der Vorschau aufrecht liegt:
+            show_rot = (360 - total_rot) % 360
+
+            temp_page.show_pdf_page(
+                temp_page.rect,
+                src_doc,
+                page.number,
+                rotate=show_rot
+            )
+
+        temp_bytes = temp_doc.tobytes()
+        temp_doc.close()
+
+    # --- SCHRITT 2: Aufrecht stehendes Dokument schneiden ---
+    with fitz.open("pdf", temp_bytes) as norm_doc, fitz.open() as out_doc:
+        for page in norm_doc:
+            rect = page.rect  # x0=0, y0=0, width=vis_w, height=vis_h, rotation=0
+
+            if enabled:
+                split_x = rect.width * split_ratio
+                rect_left = fitz.Rect(0, 0, split_x, rect.height)
+                rect_right = fitz.Rect(split_x, 0, rect.width, rect.height)
+
+                # Links = Seite 1, Rechts = Seite 2
+                for clip_rect in (rect_left, rect_right):
+                    if target_format in ("a4", "a4_portrait"):
+                        target_w, target_h = A4_W, A4_H
+                    elif target_format == "a4_landscape":
+                        target_w, target_h = A4_H, A4_W
+                    else:
+                        target_w, target_h = clip_rect.width, clip_rect.height
+
+                    target_page = out_doc.new_page(width=target_w, height=target_h)
+
+                    if target_format == "original":
+                        target_page.show_pdf_page(target_page.rect, norm_doc, page.number, clip=clip_rect)
+                    else:
+                        target_page.show_pdf_page(target_page.rect, norm_doc, page.number, clip=clip_rect, keep_proportion=True)
+
+            else:
+                # Kein Schnitt: Seite ungeschnitten übernehmen
+                if target_format in ("a4", "a4_portrait"):
+                    target_w, target_h = (A4_H, A4_W) if rect.width > rect.height else (A4_W, A4_H)
+                elif target_format == "a4_landscape":
+                    target_w, target_h = A4_H, A4_W
+                else:
+                    target_w, target_h = rect.width, rect.height
+
+                target_page = out_doc.new_page(width=target_w, height=target_h)
+                if target_format == "original":
+                    target_page.show_pdf_page(target_page.rect, norm_doc, page.number)
+                else:
+                    target_page.show_pdf_page(target_page.rect, norm_doc, page.number, keep_proportion=True)
+
+        out_doc.save(output_path)
 
 def extrahiere_instrument_und_seite(ocr_text):
     text = ocr_text.strip()
@@ -97,65 +168,85 @@ def extrahiere_instrument_und_seite(ocr_text):
 
     return text, ""
 
+
 def verarbeite_pdf_ocr(pdf_pfad, regionen=None, instrument_regeln=None):
-    """Erkennt Titel, Instrument und Seitenzahl aus den Seitenrändern."""
-    doc = fitz.open(pdf_pfad)
+    """
+    Erkennt Titel, Instrument und Seitenzahl aus den Seitenrändern.
+    Variante 1 bei 3 Referenzseiten:
+    - Seite 1 -> 'first'
+    - Gerade Seiten (2, 4, 6, ...) -> 'second'
+    - Ungerade Folgeseiten (3, 5, 7, ...) -> 'third' (Fallback auf 'second', falls 'third' nicht markiert wurde)
+    """
     ergebnisse = []
 
-    for seiten_nummer, page in enumerate(doc):
-        rect = page.rect
-        if regionen:
-            profil = "first" if seiten_nummer == 0 else "second"
-            instrument_region = regionen.get(f"{profil}_instrument")
-            if instrument_region:
-                instrument_bereich = _region_rect(rect, instrument_region)
-                instrument_text = _ocr_bereich(page, instrument_bereich, psm=7)
-                instrument = erkenne_instrument(instrument_text, instrument_regeln)
-            else:
-                instrument = ""
+    with fitz.open(pdf_pfad) as doc:
+        for seiten_nummer, page in enumerate(doc):
+            rect = page.rect
+            seiten_nr_1basiert = seiten_nummer + 1
 
-            zahlen_bereich = regionen.get(f"{profil}_page_number")
-            if seiten_nummer == 0 and not zahlen_bereich:
+            if regionen:
+                if seiten_nr_1basiert == 1:
+                    profil = "first"
+                elif seiten_nr_1basiert % 2 == 0:
+                    profil = "second"
+                else:
+                    profil = "third"
+
+                # Falls auf der 3. Referenzseite nichts markiert wurde, auf 2. Referenzseite zurückfallen
+                instrument_region = regionen.get(f"{profil}_instrument")
+                if not instrument_region and profil == "third":
+                    instrument_region = regionen.get("second_instrument")
+
+                if instrument_region:
+                    instrument_bereich = _region_rect(rect, instrument_region)
+                    instrument_text = _ocr_bereich(page, instrument_bereich, psm=7)
+                    instrument = erkenne_instrument(instrument_text, instrument_regeln)
+                else:
+                    instrument = ""
+
+                zahlen_bereich = regionen.get(f"{profil}_page_number")
+                if not zahlen_bereich and profil == "third":
+                    zahlen_bereich = regionen.get("second_page_number")
+
+                if seiten_nr_1basiert == 1 and not zahlen_bereich:
+                    seite = "1"
+                elif zahlen_bereich:
+                    zahlen_text = _ocr_bereich(page, _region_rect(rect, zahlen_bereich), psm=7)
+                    seite = _einzelne_zahl(zahlen_text)
+                else:
+                    seite = ""
+
+                ergebnisse.append({
+                    "seite_index": seiten_nr_1basiert,
+                    "instrument": instrument,
+                    "seite": seite,
+                    "profil": profil
+                })
+                continue
+
+            obere_zone = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + rect.height * 0.22)
+            obere_mitte = fitz.Rect(rect.x0 + rect.width * 0.35, rect.y0, rect.x0 + rect.width * 0.65, rect.y0 + rect.height * 0.18)
+            untere_mitte = fitz.Rect(rect.x0 + rect.width * 0.35, rect.y0 + rect.height * 0.82, rect.x0 + rect.width * 0.65, rect.y1)
+
+            titel_text = _ocr_bereich(page, obere_zone, psm=6)
+            seiten_text = _ocr_bereich(page, rect, psm=11)
+            obere_zahl = _ocr_zahl(page, obere_mitte)
+            untere_zahl = _ocr_zahl(page, untere_mitte)
+
+            hat_titel = _enthaelt_stuecktitel(titel_text)
+            if hat_titel:
                 seite = "1"
-            elif zahlen_bereich:
-                zahlen_text = _ocr_bereich(page, _region_rect(rect, zahlen_bereich), psm=7)
-                seite = _einzelne_zahl(zahlen_text)
             else:
-                seite = ""
+                erkannte_seite = obere_zahl or untere_zahl or ""
+                seite = "" if erkannte_seite == "1" else erkannte_seite
 
+            instrument = erkenne_instrument(seiten_text, instrument_regeln)
             ergebnisse.append({
-                "seite_index": seiten_nummer + 1,
+                "seite_index": seiten_nr_1basiert,
                 "instrument": instrument,
-                "seite": seite,
-                "profil": profil
+                "seite": seite
             })
-            continue
 
-        obere_zone = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.height * 0.22)
-        obere_mitte = fitz.Rect(rect.width * 0.35, rect.y0, rect.width * 0.65, rect.height * 0.18)
-        untere_mitte = fitz.Rect(rect.width * 0.35, rect.height * 0.82, rect.width * 0.65, rect.y1)
-
-        titel_text = _ocr_bereich(page, obere_zone, psm=6)
-        seiten_text = _ocr_bereich(page, rect, psm=11)
-        obere_zahl = _ocr_zahl(page, obere_mitte)
-        untere_zahl = _ocr_zahl(page, untere_mitte)
-
-        # Eine Seite mit sichtbarem Stücktitel ist immer die erste Seite.
-        hat_titel = _enthaelt_stuecktitel(titel_text)
-        if hat_titel:
-            seite = "1"
-        else:
-            erkannte_seite = obere_zahl or untere_zahl or ""
-            seite = "" if erkannte_seite == "1" else erkannte_seite
-
-        instrument = erkenne_instrument(seiten_text, instrument_regeln)
-        ergebnisse.append({
-            "seite_index": seiten_nummer + 1,
-            "instrument": instrument,
-            "seite": seite
-        })
-
-    doc.close()
     return ergebnisse
 
 
@@ -189,19 +280,14 @@ def _region_rect(page_rect, region):
 def erkenne_instrument(text, instrument_regeln=None):
     """Gibt ausschließlich den erkannten Instrumentnamen auf Deutsch zurück."""
     bereinigter_text = " ".join(text.split()).strip()
-    
-    # Toleranterer Abgleich: Bindestriche werden ignoriert, falls OCR "Bass-Clarinet" liest
     text_suche = bereinigter_text.casefold().replace("-", " ")
-    
     gefundene_instrumente = []
-    
-    # 1. Benutzerdefinierte Regeln (aus instrument_rules.json)
+
     for regel in instrument_regeln or []:
         begriff = regel.get("erkannt", "").strip().casefold().replace("-", " ")
         ziel = regel.get("ziel", "").strip()
-        
+
         if begriff and ziel:
-            # NEU: Die Regex fängt jetzt auch Doppelstimmen wie "1/2" oder "1-2" ab!
             match = re.search(
                 rf"(?<![a-zäöüß]){re.escape(begriff)}(?![a-zäöüß])\s*(?:[-:]?\s*(\d+(?:[/-]\d+)?))?",
                 text_suche,
@@ -210,10 +296,8 @@ def erkenne_instrument(text, instrument_regeln=None):
                 nummer = f" {match.group(1)}" if match.group(1) else ""
                 gefundene_instrumente.append((len(begriff) + 10000, f"{ziel}{nummer}"))
 
-    # 2. Standard-Wörterbuch (Fallback)
     for begriff, uebersetzung in INSTRUMENTE.items():
         begriff_suche = begriff.casefold().replace("-", " ")
-        
         match = re.search(
             rf"(?<![a-zäöüß]){re.escape(begriff_suche)}(?![a-zäöüß])\s*(?:[-:]?\s*(\d+(?:[/-]\d+)?))?",
             text_suche,
@@ -224,9 +308,9 @@ def erkenne_instrument(text, instrument_regeln=None):
 
     if not gefundene_instrumente:
         return bereinigter_text
-        
-    # Pickt den Treffer mit der höchsten Wertung (längstes Wort oder JSON-Regel)
+
     return max(gefundene_instrumente)[1]
+
 
 def _ocr_bereich(page, bereich, psm=6):
     pix = page.get_pixmap(matrix=fitz.Matrix(3, 3), clip=bereich)
@@ -255,7 +339,7 @@ def _enthaelt_stuecktitel(text):
 
 def speichere_finale_pdfs(seiten_daten):
     ziel_ordner = Path("Dateien") / "Fertig"
-    ziel_ordner.mkdir(exist_ok=True) # Erstellt den Ordner, falls er nicht existiert
+    ziel_ordner.mkdir(parents=True, exist_ok=True)
 
     pdf_gruppen = {}
     for reihenfolge, daten in enumerate(seiten_daten):
@@ -271,15 +355,14 @@ def speichere_finale_pdfs(seiten_daten):
     for gruppe in pdf_gruppen.values():
         pdf_seiten = sorted(gruppe["seiten"], key=_seiten_sortierung)
         ziel_pfad = ziel_ordner / f"{gruppe['instrument']}.pdf"
-        out_doc = fitz.open()
 
-        for seite in pdf_seiten:
-            daten = seite["daten"]
-            with fitz.open(Path("Dateien") / seite["dateiname"]) as doc:
-                out_doc.insert_pdf(doc, from_page=daten["id"] - 1, to_page=daten["id"] - 1)
+        with fitz.open() as out_doc:
+            for seite in pdf_seiten:
+                daten = seite["daten"]
+                with fitz.open(Path("Dateien") / seite["dateiname"]) as doc:
+                    out_doc.insert_pdf(doc, from_page=daten["id"] - 1, to_page=daten["id"] - 1)
 
-        out_doc.save(ziel_pfad)
-        out_doc.close()
+            out_doc.save(ziel_pfad)
 
 
 def _seiten_sortierung(eintrag):
@@ -287,8 +370,4 @@ def _seiten_sortierung(eintrag):
     match = re.search(r"\d+", seite)
     if match:
         return 0, int(match.group()), eintrag["reihenfolge"]
-    # Eine Titelseite ohne eingetragene Seitenzahl gehört an den Anfang.
     return 0, 1, eintrag["reihenfolge"]
-    
-    # Optional: Das komplette A4-Sammeldokument am Ende löschen
-    # quell_pfad.unlink(missing_ok=True)
