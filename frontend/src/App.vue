@@ -472,14 +472,14 @@ const handleKeyDown = (event) => {
   if (mode.value !== 'review' || isBusy.value) return
 
   if (event.code === 'Numpad1') {
-    event.preventDefault()
-    applyReferenceProfile('first')
+      event.preventDefault()
+      applyReferenceProfile('first')
   } else if (event.code === 'Numpad2') {
-    event.preventDefault()
-    applyReferenceProfile('second')
+      event.preventDefault()
+      applyReferenceProfile('second')
   } else if (event.code === 'Numpad3') {
-    event.preventDefault()
-    applyReferenceProfile('third')
+      event.preventDefault()
+      applyReferenceProfile('third')
   } else if (event.altKey && event.key === 'ArrowLeft') {
     event.preventDefault()
     prevPage()
@@ -491,6 +491,23 @@ const handleKeyDown = (event) => {
 
 onMounted(() => window.addEventListener('keydown', handleKeyDown))
 onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+
+// Neu: Nur die OCR-Rahmen aktualisieren und direkt zurück zur Prüfung springen
+const updateProfilesAndReturn = () => {
+  ocrProfiles.value = {
+    first: { instrument: selections.value.first.instrument, page: selections.value.first.page },
+    second: { instrument: selections.value.second.instrument, page: selections.value.second.page },
+    third: { instrument: selections.value.third.instrument, page: selections.value.third.page }
+  }
+  mode.value = 'review'
+  nextTick(() => {
+    instrumentInput.value?.focus()
+    instrumentInput.value?.select()
+  })
+}
+
+
+
 </script>
 
 <template>
@@ -631,21 +648,32 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
       </div>
     </main>
 
-    <!-- SCHRITT 2 - REFERENZEN -->
-    <main v-else-if="mode === 'mark'" class="flex-1 overflow-y-auto bg-gray-50 p-6">
-      <div class="max-w-[1600px] mx-auto space-y-6">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 class="text-2xl font-bold text-gray-800">2. OCR-Bereiche auf 3 Referenzseiten festlegen</h2>
-            <p class="text-gray-600 mt-1">1. Referenz = Seite 1 • 2. Referenz = Gerade Seiten • 3. Referenz = Ungerade Folgeseiten</p>
-          </div>
-          <div class="flex gap-3">
-            <button @click="mode = 'split'" class="border border-gray-300 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg font-medium">← Zurück zum Schnitt</button>
-            <button @click="processDocuments" :disabled="isBusy" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold disabled:opacity-50">
-              {{ isBusy ? 'OCR läuft...' : 'OCR starten' }}
-            </button>
-          </div>
-        </div>
+ <!-- SCHRITT 2 - REFERENZEN -->
+<main v-else-if="mode === 'mark'" class="flex-1 overflow-y-auto bg-gray-50 p-6">
+  <div class="max-w-[1600px] mx-auto space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-800">2. OCR-Bereiche auf 3 Referenzseiten festlegen</h2>
+        <p class="text-gray-600 mt-1">1. Referenz = Seite 1 • 2. Referenz = Gerade Seiten • 3. Referenz = Ungerade Folgeseiten</p>
+      </div>
+      
+      <div class="flex flex-wrap gap-3">
+        <button @click="mode = 'split'" class="border border-gray-300 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg font-medium text-sm">
+          ← Schnitt ändern
+        </button>
+
+        <!-- Neu: Wenn schon Seiten geladen sind, kann man ohne Neu-OCR direkt zurückkehren -->
+        <button v-if="pages.length > 0" @click="updateProfilesAndReturn"
+          class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow">
+          ✓ Zurück zur Prüfung (Rahmen übernehmen)
+        </button>
+
+        <button @click="processDocuments" :disabled="isBusy"
+          class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow disabled:opacity-50">
+          {{ isBusy ? 'OCR läuft...' : (pages.length > 0 ? 'Komplette OCR neu starten' : 'OCR starten') }}
+        </button>
+      </div>
+    </div>
 
         <section class="bg-white rounded-lg shadow p-5">
           <label class="block text-sm font-semibold text-gray-700">Titel des Notensatzes
@@ -772,30 +800,35 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               </label>
             </div>
 
-            <!-- Referenz-Auswahl mit Hotkeys NumPad 1, 2, 3 -->
-            <div class="mt-5">
-              <p class="text-xs font-semibold text-gray-500 mb-2">Mit anderer Referenzseite neu erkennen:</p>
-              <div class="grid grid-cols-3 gap-2">
-                <button @click="applyReferenceProfile('first')" :disabled="isBusy"
-                  :class="currentPage?.profil === 'first' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
-                  class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5">
-                  <span>1. Referenz</span>
-                  <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1 py-0.5 rounded">Num 1</span>
-                </button>
-                <button @click="applyReferenceProfile('second')" :disabled="isBusy"
-                  :class="currentPage?.profil === 'second' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
-                  class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5">
-                  <span>2. Referenz</span>
-                  <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1 py-0.5 rounded">Num 2</span>
-                </button>
-                <button @click="applyReferenceProfile('third')" :disabled="isBusy"
-                  :class="currentPage?.profil === 'third' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
-                  class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5">
-                  <span>3. Referenz</span>
-                  <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1 py-0.5 rounded">Num 3</span>
-                </button>
-              </div>
-            </div>
+<div class="mt-5">
+  <div class="flex items-center justify-between mb-2">
+    <p class="text-xs font-semibold text-gray-500">Mit anderer Referenzseite neu erkennen:</p>
+    <button @click="mode = 'mark'" class="text-xs text-blue-600 hover:text-blue-800 font-semibold underline">
+      📐 Referenzen anpassen
+    </button>
+  </div>
+
+  <div class="grid grid-cols-3 gap-2">
+    <button @click="applyReferenceProfile('first')" :disabled="isBusy"
+      :class="currentPage?.profil === 'first' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
+      class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5 transition-all">
+      <span>1. Referenz</span>
+      <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1 py-0.5 rounded">Shift+Num 1</span>
+    </button>
+    <button @click="applyReferenceProfile('second')" :disabled="isBusy"
+      :class="currentPage?.profil === 'second' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
+      class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5 transition-all">
+      <span>2. Referenz</span>
+      <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1 py-0.5 rounded">Shift+Num 2</span>
+    </button>
+    <button @click="applyReferenceProfile('third')" :disabled="isBusy"
+      :class="currentPage?.profil === 'third' ? 'bg-blue-600 text-white ring-2 ring-blue-400' : 'border border-blue-300 text-blue-700 hover:bg-blue-50'"
+      class="py-2 px-1 rounded-lg text-xs font-semibold disabled:opacity-50 flex flex-col items-center gap-0.5 transition-all">
+      <span>3. Referenz</span>
+      <span class="text-[10px] font-mono opacity-80 bg-black/10 px-1 py-0.5 rounded">Shift+Num 3</span>
+    </button>
+  </div>
+</div>
           </div>
 
           <!-- NAVIGATION & MANUELLER SCHRITT ZURÜCK -->
